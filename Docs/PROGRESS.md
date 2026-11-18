@@ -1,5 +1,15 @@
 # Progress log
 
+## 2026-11-18 - M0 session 4: Live Coding compile passes, cleanup planned
+**What changed:** on `feature/m0-setup`, changed one log string in `DemoCoGameMode.cpp`, compiled it through `LiveCodingToolset.CompileLiveCoding` (`Success`), reverted the string and compiled again (`Success`). Source is unchanged at the end. Updated `SETUP_NOTES.md` (item 3 now PASS, new quirks), `PROJECT_STATE.md` and `NEXT_STEPS.md`. Checked what depends on the old `Destruction_structure` script and wrote a cleanup plan; nothing was deleted yet.
+
+**Why:** Day-0 item 3 needed a real compile, not `NoChanges`. The first two attempts returned `NoChanges` because `DemoCo.dll` had not been loaded by the editor, so Live Coding ignored the edit. A Visual Studio build fixed it. The old script cannot be removed in one step: a Blueprint derives from it and a level actor uses that Blueprint.
+
+**New Unreal concepts:**
+- *Live Coding patch:* a changed function body is compiled into a small patch DLL (`UnrealEditor-DemoCo.patch_N`) that is loaded into the running editor. It only works for a module whose normal DLL the editor already loaded.
+- *External actors (One File Per Actor):* each actor in a level is saved as its own file under `Content/__ExternalActors__/`, so a placed actor shows up as an asset referencer of its Blueprint.
+- *Blueprint parent class:* a Blueprint inherits from a C++ class; removing the C++ class leaves the Blueprint broken, so Blueprint and level instances go first.
+
 ## 2026-11-18 - M0 session 3: Live Coding toolset, log reading, PIE
 **What changed:** confirmed `LiveCodingToolset` loads and `CompileLiveCoding` returns `NoChanges` on a clean build; read the Output Log through `LogsToolset`; started and stopped PIE (listen server plus 1 client) through `EditorAppToolset`; updated `SETUP_NOTES.md`, `PROJECT_STATE.md`, `NEXT_STEPS.md`. No source, config or asset changes.
 
