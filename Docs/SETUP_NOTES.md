@@ -25,6 +25,17 @@ Project module: `DemoCo` (Runtime). Plugins enabled in `DemoCo.uproject` include
   ```
 - Claude Desktop: connected and working (user confirmed). Exact entry (direct URL vs `unreal_mcp_proxy.exe`) not yet pasted here. TODO: paste it.
 - Filesystem connector: scoped to `E:\unity\projects\DemoCo`.
+- The repo `.mcp.json` is for Claude Code and is unused by Claude Desktop. The Desktop entry for a local HTTP server is most likely the STDIO proxy (`unreal_mcp_proxy.exe`); paste the working entry here when you have it.
+
+## Git
+- Remote: GitHub (`origin`). LFS installed; `.gitattributes` tracks `.uasset`, `.umap`, `.fbx`, `.obj`, `.png`, `.psd`, `.tga`, `.wav`, `.mp4`.
+- Open: check `git lfs ls-files` for binaries committed before LFS (they stay in normal history until migrated); consider more extensions in `.gitattributes`; consider `.idea/`, `PackageBuild/`, `*.user` in `.gitignore`. See `NEXT_STEPS.md`.
+
+## Baseline project config (template defaults, to be reviewed in Spike C)
+`Config/DefaultEngine.ini` currently has Lumen GI and reflections (`r.DynamicGlobalIlluminationMethod=1`, `r.ReflectionMethod=1`), hardware ray tracing on (`r.RayTracing=True`), Substrate on, virtual shadow maps on, DX12 with SM6. The design target is 60 fps on mid-range hardware with dynamic lighting and Lumen off by default. Changing these needs your approval (section 10 of the workflow doc) and a baseline measurement first.
+
+## MCP permissions
+All calls go through the single `call_tool`, so Claude Desktop's permission prompt cannot separate reads from deletes. Keep per-call approval on for `call_tool` and commit before sessions that edit assets.
 
 ## Quirks
 - `call_tool` takes the bare tool name (`get_current_level`), not the prefixed name from `describe_toolset`.
