@@ -1,7 +1,7 @@
 # Development workflow: Unreal MCP + Claude Desktop
 
 Project: co-op (up to 4 players) multiplayer destruction framework, Unreal Engine 5.8.3 (Launcher build), C++.
-Document version: 1 (2026-11-18). Lives in the repo at `Docs/DEV_WORKFLOW_MCP.md` so every Claude session can reload it.
+Document version: 3 (2026-11-18, fracture pattern revised: irregular cells with accepted aim offset). Lives in the repo at `Docs/DEV_WORKFLOW_MCP.md` so every Claude session can reload it.
 
 ## 1. Purpose
 
@@ -29,7 +29,7 @@ What is verified and what is not is listed in section 11. Anything marked **VERI
 | Who | Does |
 |---|---|
 | Claude (Desktop) | Reads and writes C++ and docs in the repo, drives the editor through MCP, runs compiles and automation tests, reads results, proposes commits |
-| You | Decides, reviews every diff, runs Git, rebuilds from Rider/Visual Studio when needed, plays and judges feel, approves risky actions (section 9) |
+| You | Decides, reviews every diff, runs Git, rebuilds from Rider/Visual Studio when needed, plays and judges feel, approves risky actions (section 10) |
 | Editor | Source of truth for assets, PIE results, Output Log |
 
 ## 4. Day-0 checklist (milestone M0)
@@ -62,10 +62,10 @@ M0 is done when items 1 to 4 pass, and 5 to 8 each have a pass or a documented f
     SETUP_NOTES.md         working MCP config, ports, known quirks
     PROGRESS.md            per-step "what changed and why" notes (learning log)
   Source/
-    DestructionSolver/     pure C++, no UObject: fracture tree, connectivity graph, strain solver (unit-testable)
-    DestructionCore/       runtime types, destructible asset, structure actor, event pipeline, replication
-    DestructionGameplay/   tools, props, glass, debris, vehicles, Demolition mode
-    DestructionEditor/     baker, validation, project MCP toolset (editor-only)
+    DemoCo/Destruction/Solver/    pure C++, no UObject, namespace Destruction: fracture tree, connectivity graph, strain solver (unit-testable)
+    DemoCo/Destruction/Core/      runtime types, destructible asset, structure actor, event pipeline, replication
+    DemoCo/Destruction/Gameplay/  tools, props, glass, debris, vehicles, Demolition mode
+    DemoCoEditor/                 editor-only module, added when the baker starts: baker, validation
   Content/Destruction/{Materials,Buildings,Props,Tools,Vehicles,Modes}/
 ```
 
@@ -119,17 +119,20 @@ For every change:
 
 ## 8. Testing strategy
 
-1. **Solver unit tests (headless).** `DestructionSolver` has no engine dependencies, so Claude writes Automation tests for the fracture tree, connectivity, strain and detach logic and runs them through MCP. Every solver change ships with a test.
-2. **Determinism and sync checks.** A debug command (for example `Destruction.DumpHash`) prints a hash of each structure's alive-piece bitset. After each scenario, the host and every client must print the same hash.
+1. **Solver unit tests (headless).** The solver code in `Destruction/Solver` has no engine dependencies, so Claude writes Automation tests for the fracture tree, connectivity, strain and detach logic and runs them through MCP. Every solver change ships with a test.
+2. **Determinism and sync checks.** A debug command (for example `Destruction.DumpHash`) prints a hash of each structure's node state and cut-edge bits. After each scenario, the host and every client must print the same hash.
 3. **Multiplayer matrix.** Listen server plus 1 to 3 clients, with Network Emulation profiles (good, average, bad), and a late-join case after a collapse. Checks: hashes match, rubble sits in the same place, no player gets stuck, bandwidth stays within budget.
 4. **Performance.** `stat unit` and Unreal Insights on a mid-range PC as the host. Target is 60 fps with the host also simulating. Budgets are set in M1 and checked in every milestone from M4.
-5. **Scenario scripts.** Fixed damage scenarios (a rocket at a point, C4 on a column) so results are repeatable. Once the project toolset exists (section 9), Claude runs these itself.
+5. **Awake-group and settle checks.** Groups that fall must stop replicating once settled, shaking must not keep them awake, and the number of awake groups and bytes per second are logged. A late joiner must see the same rubble.
+6. **Scenario scripts.** Fixed damage scenarios (a rocket at a point, C4 on a column) so results are repeatable. Until the project toolset exists (section 9), scenarios are console commands (for example `Destruction.ApplyTestDamage`) that you or Claude trigger; afterwards Claude runs them itself.
 
-## 9. Project toolset and Agent Skills (from M2)
+## 9. Project toolset and Agent Skills (deferred)
+
+**Status: deferred (decision 2026-11-18).** The API is experimental in 5.8. Until M6, repeatable scenarios use console commands (`Destruction.ApplyTestDamage`, `Destruction.ResetStructure`, `Destruction.DumpHash`) plus Automation tests. Revisit when the baker needs an editor-side driver. The design below stays as the target.
 
 The plugin lets a project register its own toolsets (`UToolsetDefinition` with static `UFUNCTION(meta = (AICallable))` methods, registered with `ToolsetRegistry`) and its own Agent Skills (reached through `AgentSkillToolset.ListSkills` and `GetSkills`). Both are experimental in 5.8, so the API may shift. The plugin's guidance prefers Python when the Python API covers what the tool needs, and C++ otherwise. Tests are mandatory for every tool.
 
-Planned `DestructionToolset` (in `DestructionEditor`):
+Planned `DestructionToolset` (in `DemoCoEditor`):
 
 - `ValidateBuilding(source)`: reports non-watertight meshes, unmapped materials, oversize root pieces
 - `BakeBuilding(source, settings)`: one-click bake that writes the destructible asset and a report
@@ -150,6 +153,8 @@ Claude asks first before:
 - anything that touches `main`, commits, merges or pushes (you do these)
 - adding a third-party plugin or dependency
 
+Before any session that edits assets through MCP, you commit, so there is a rollback point. All MCP calls go through the single `call_tool`, so Claude Desktop's permission prompt cannot tell reads from deletes. Keep per-call approval on for `call_tool` until you trust the toolset list. These rules are followed by Claude; the client does not enforce them.
+
 ## 11. What is verified and what is not
 
 Verified from the plugin's own documentation: the three meta-tools and the `call_tool` flow; the two required plugins; auto-start and port settings; `LiveCodingToolset.CompileLiveCoding`; `AutomationTestToolset` workflow; Agent Skills and custom toolsets; the STDIO proxy; the safety rules in section 7.
@@ -161,31 +166,33 @@ Not verified, so checked in M0: Claude Desktop's exact config for this server; w
 | M | Goal | Claude does (with MCP) | Done when |
 |---|---|---|---|
 | M0 | Setup | Day-0 checklist; create the C++ First Person project; write the `Docs/` skeleton | Section 4 passes |
-| M1 | Spikes | **Spike A:** one wall, listen server plus 2 clients; compare Chaos Geometry Collection replication with custom chunk events (divergence and bandwidth). **Spike B:** can fracture/Dataflow or Geometry Script be driven from editor code. Set budgets | A decision recorded in `DECISIONS.md` for runtime and baker approach |
-| M2 | Runtime core | Solver on a code-generated test structure; fracture tree; event pipeline; replicated bitset; late-join snapshot; project toolset v1 | Hashes match across host and clients in the test matrix |
-| M3 | Player | Replace the template character with a replicated one on CharacterMovement; auto-step, hold-space vault | Two clients move and vault in a listen session |
-| M4 | Tools | Sledgehammer, RPG, C4 as `FDestructionImpulse` sources; damage tables per material | Each tool breaks a test structure correctly on all clients |
-| M5 | Debris and rubble | Detached groups as rigid bodies; settle to non-simulating rubble; **sync in groups, whole-structure snapshot as the extreme case**; lift-and-damage when debris lands on a player; falling groups damage other structures | Collapse of a multi-floor test building stays in sync and holds frame rate |
+| M1 | Spikes | **Spike A:** one wall, listen server plus 2 clients; custom solver state and group replication is the baseline, with a one-day Chaos Geometry Collection comparison (divergence and bandwidth); Chaos is only considered for simulating detached groups. **Spike B:** can Geometry Script or fracture/Dataflow be driven from editor code to bake an irregular-cell hierarchy (leaves about 1 m, adjacency stored, aim offset within about 0.5 m), and does it look right; compare against the lattice fallback (1 m leaves, binary partition, jagged cuts). **Spike C:** rendering and cost of intact buildings at scale (about 100k pieces: instanced meshes with hidden instances versus swapped proxies) plus the cost of awake-group simulation and replication (shaking, settle, rate). Record a rendering baseline (Lumen, ray tracing, virtual shadow maps) and propose config changes (needs approval). Set budgets | A decision recorded in `DECISIONS.md` for runtime, rendering representation and baker approach |
+| M2 | Runtime core | Solver on a code-generated test structure; fracture tree; graph with node mass and edge capacity; event pipeline; replicated node state plus cut-edge bits; group-as-unit replication; late-join snapshot; console test commands; a thin baker run on one real hollow lowpoly building to validate the solver's assumptions | Hashes (node state plus cut edges) match across host and clients in the test matrix |
+| M3 | Player | Replace the template character with a replicated one on CharacterMovement; auto-step, hold-space vault redone to work with client prediction (replaces the prototype in `DemoCoCharacter`) | Two clients move and vault in a listen session |
+| M4 | Tools | Sledgehammer, RPG, C4 as `FDestructionImpulse` sources; damage tables per material; a Steam session test over the internet with the test App ID 480 | Each tool breaks a test structure correctly on all clients, including in a Steam session with a remote friend |
+| M5 | Debris and rubble | Detached groups as rigid bodies, each replicated as one transform with deadband, quantization and settle rules; settle to non-simulating rubble; sag on the same graph as M5b if the budget allows; **sync in groups, whole-structure snapshot as the extreme case**; lift-and-damage when debris lands on a player; falling groups damage other structures | Collapse of a multi-floor test building stays in sync and holds frame rate |
 | M6 | Baker | One-click bake per the approved rules; validation report; Physical Material then keyword mapping | A real artist-made building bakes and plays correctly |
 | M7 | Props, glass, mode | Props with carry and strength; valuables; glass panes; Demolition mode, HUD percentage, timer, round reset | A full round plays start to finish with 2 clients |
-| M8 | Vehicles | Crane (physical ball), then bulldozer, then truck; driver-simulated; riders on seat slots | Each vehicle damages structures consistently for all players |
+| M8 | Vehicles | Crane (physical ball), then bulldozer, then truck; driver-simulated; riders on seat slots; players standing on top move with the vehicle without a seat | Each vehicle damages structures consistently for all players |
 | M9 | Scale and ship | 20 to 30 buildings, profiling, budgets, Steam sessions (engine Steam plugins), packaging | 60 fps on a mid-range host in a 4-player session |
 
 Rubble rule (your D7 amendment): settled debris becomes non-simulating rubble and is synchronized in groups. Old rubble is not removed. A cap on live pieces is added only if M5 or M9 profiling shows the group-sync approach is not enough, and then it is the last resort.
 
-Stretch, after M9: gradual sag (the second layer in The Finals' integrity system), host migration, streaming.
+Planned after M5 if the budget allows (M5b): gradual sag, the second layer in The Finals' integrity system, on the same graph. Stretch, after M9: host migration, streaming.
 
 ## Appendix A: Approved decisions (summary)
 
-- Fracture tree from root to 1 m leaves, size halving per level, max depth 4 (root piece cap about 16 m; larger structures are split into several root pieces by the baker). Wall and floor pieces are slabs ("1 m" is in-plane size).
+`DECISIONS.md` is authoritative and was updated after the 2026-11-18 design review; this summary may lag.
+
+- Fracture tree from root to leaves of about 1 m (irregular baked cells, tolerated range about 0.7 to 1.4 m; some aim offset accepted), max depth 4 (root piece cap about 16 m; larger structures are split into several root pieces by the baker). Lattice with exact 1 m leaves is the Spike B fallback. Wall and floor pieces are slabs ("1 m" is in-plane size).
 - Break: piece health from material and size; at zero it splits into children and severs connections inside the damage volume; groups cut from anchors detach as rigid groups and can be broken again; destroyed 1 m pieces become local VFX. Large hits cascade several levels in one event. Melee uses about a 0.5 m radius.
-- Integrity: connectivity graph with strength per connection, foundation pieces as anchors; v1 is connectivity plus strain, sag is a stretch goal on the same graph.
+- Integrity: connectivity graph with strength per connection, foundation pieces as anchors; v1 is connectivity plus strain, sag is planned after M5 on the same graph.
 - Materials are data assets (concrete baseline, wood weaker, metal stronger). Glass is a separate system (one replicated bit per pane, any damage shatters it).
 - Props are separate actors with health and per-prop strength; destroyed state is one replicated flag plus local particles; carriable; valuables are props with an objective tag.
 - Debris persists as non-simulating rubble, synchronized in groups (see rubble rule above).
 - Players: debris deals momentum damage; overlapping debris lifts the player to the nearest free spot on top plus damage; no trapping. Auto-step about 0.5 m, vault up to about 1.2 m (tunable). Falling groups damage other structures.
 - Network: host-authoritative listen server for 4 players; direct IP or LAN in development, Steam sessions later through the engine's Steam plugins; no host migration; legacy replication (Iris is production-supported in 5.8 and can be revisited, structs stay Iris-friendly).
-- Vehicles: the driver's machine simulates the vehicle and the host validates damage; riders attach to seat slots; build order crane, bulldozer, truck.
+- Vehicles: the driver's machine simulates the vehicle and the host validates damage; riders attach to seat slots, and a player standing on a vehicle moves with it without a seat; build order crane, bulldozer, truck.
 - Baker: one click, validates geometry (watertight check), classifies shell/prop/glass, assigns materials (Physical Material first, then keyword table, fallback concrete with a warning, per-mesh override tag), builds fracture tree and connectivity graph with anchors.
 - Demolition mode: progress is the share of objective-structure volume no longer connected to its anchors; fail on valuable destroyed or timer end; rounds reset by reloading the map; `GameMode`/`GameState` C++ bases, Blueprint subclasses, rules data asset; no Game Feature plugins.
 - Project: new C++ First Person template project on the Launcher 5.8.3, no engine changes; own replicated character on CharacterMovement; Enhanced Input kept; no Gameplay Ability System or Common UI; dynamic lighting with Lumen off by default, Nanite decided after the spike.
@@ -202,4 +209,4 @@ Change any of these by editing `DECISIONS.md`.
 
 ## Appendix C: Session starter prompt
 
-> Read `Docs/PROJECT_STATE.md`, `Docs/DECISIONS.md` and `Docs/DEV_WORKFLOW_MCP.md`. Confirm the editor is reachable with `list_toolsets`. Then tell me the current milestone, the next task, the plan for this session in a few lines, and the test that will prove it. Do not change anything until I say go.
+> Read `CLAUDE.md`, `Docs/PROJECT_STATE.md`, `Docs/DECISIONS.md` and `Docs/DEV_WORKFLOW_MCP.md`. Confirm the editor is reachable with `list_toolsets`. Then tell me the current milestone, the next task, the plan for this session in a few lines, and the test that will prove it. Do not change anything until I say go.

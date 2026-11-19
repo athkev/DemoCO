@@ -1,5 +1,35 @@
 # Progress log
 
+## 2026-11-18 - Fracture pattern revised: irregular cells, aim offset accepted
+**What changed:** docs only. `DECISIONS.md`, `ARCHITECTURE.md`, `DEV_WORKFLOW_MCP.md` (version 3, also fixed a stale section reference), `NEXT_STEPS.md`, `PROJECT_STATE.md`. No source, config or asset changes.
+
+**Why:** you said some offset between the aim point and the broken piece is fine, like The Finals. That removes the main reason the strict 1 m lattice was chosen. The design now uses irregular baked cells with leaves of about 1 m, and the baker stores which cells touch. This drops the power-of-two partition and the remainder rule. The lattice stays as the fallback if Spike B cannot bake the new pattern from editor code. Replication, hash and group rules are unchanged because they use node IDs and cut edges.
+
+**New Unreal concepts:**
+- *Voronoi fracture:* split a mesh into cells around seed points, so each cell is irregular. Unreal's Fracture mode and Geometry Script can do this.
+- *Adjacency:* a list of which pieces touch which. The solver builds the connectivity graph from it, instead of assuming a grid.
+
+## 2026-11-18 - Design review: replication model, fracture pattern, milestone changes
+**What changed:** docs only. Rewrote `DECISIONS.md` and `ARCHITECTURE.md`; updated `DEV_WORKFLOW_MCP.md` (version 2: modules, testing, deferred toolset, approval note, milestones, appendix), `PROJECT_STATE.md`, `NEXT_STEPS.md`, `SETUP_NOTES.md`. No source, config or asset changes.
+
+**Why:** a review of the docs against your answers and the repo found gaps. Replicated state needed cut-edge bits, because groups form when connections are cut even if no piece dies. Detached groups needed a replication rule (one transform per group, only while awake, with settle and deadband rules). Intact buildings needed a rendering plan, since about 100k pieces cannot be components. The fracture pattern needed a lattice rule so leaves are exactly 1 m. The repo also had a prototype vault that the docs did not mention, and rendering config that contradicts the 60 fps target.
+
+**New Unreal concepts:**
+- *Dormancy:* an actor that is not changing can be marked dormant so replication skips it. Structures use it between break events.
+- *Deadband and quantization:* send a transform only if it changed enough, and store it with fewer bits. Both cut bandwidth for objects that jitter.
+- *Client prediction in CharacterMovement:* the client moves first and the server confirms. Server-only `LaunchCharacter` skips the prediction, so remote clients get corrected (rubber-banding). Root motion sources and custom movement modes are the prediction-friendly options.
+- *Instanced static mesh:* many copies of one mesh drawn as one component. Individual instances can be hidden, which is the candidate way to show a building that breaks into pieces.
+
+## 2026-11-18 - M0 session 4: Live Coding compile passes, cleanup planned
+**What changed:** on `feature/m0-setup`, changed one log string in `DemoCoGameMode.cpp`, compiled it through `LiveCodingToolset.CompileLiveCoding` (`Success`), reverted the string and compiled again (`Success`). Source is unchanged at the end. Updated `SETUP_NOTES.md` (item 3 now PASS, new quirks), `PROJECT_STATE.md` and `NEXT_STEPS.md`. Checked what depends on the old `Destruction_structure` script and wrote a cleanup plan; nothing was deleted yet.
+
+**Why:** Day-0 item 3 needed a real compile, not `NoChanges`. The first two attempts returned `NoChanges` because `DemoCo.dll` had not been loaded by the editor, so Live Coding ignored the edit. A Visual Studio build fixed it. The old script cannot be removed in one step: a Blueprint derives from it and a level actor uses that Blueprint.
+
+**New Unreal concepts:**
+- *Live Coding patch:* a changed function body is compiled into a small patch DLL (`UnrealEditor-DemoCo.patch_N`) that is loaded into the running editor. It only works for a module whose normal DLL the editor already loaded.
+- *External actors (One File Per Actor):* each actor in a level is saved as its own file under `Content/__ExternalActors__/`, so a placed actor shows up as an asset referencer of its Blueprint.
+- *Blueprint parent class:* a Blueprint inherits from a C++ class; removing the C++ class leaves the Blueprint broken, so Blueprint and level instances go first.
+
 ## 2026-11-18 - M0 session 3: Live Coding toolset, log reading, PIE
 **What changed:** confirmed `LiveCodingToolset` loads and `CompileLiveCoding` returns `NoChanges` on a clean build; read the Output Log through `LogsToolset`; started and stopped PIE (listen server plus 1 client) through `EditorAppToolset`; updated `SETUP_NOTES.md`, `PROJECT_STATE.md`, `NEXT_STEPS.md`. No source, config or asset changes.
 
