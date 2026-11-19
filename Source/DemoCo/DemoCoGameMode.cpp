@@ -5,4 +5,5 @@
 ADemoCoGameMode::ADemoCoGameMode()
 {
 	// stub
+	UE_LOG(LogTemp, Log, TEXT("Day0 LiveCoding test"));
 }
